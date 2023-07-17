@@ -1,0 +1,312 @@
+<head>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.js"></script>
+  <style>
+    .message {
+      position: relative;
+    }
+
+    .message:after {
+      content: "";
+      top: 0;
+      position: absolute;
+      border: 0.75em solid transparent;
+      border-top-color: blue;
+      display: block;
+    }
+
+    .message.assistant:after {
+      left: -0.45em;
+      border-top-color: inherit;
+    }
+
+    .message.user:after {
+      right: -0.45em;
+      border-top-color: inherit;
+    }
+
+    .type-indicator span {
+      display: inline-block;
+      padding: 0 0.075em;
+      animation: type-indicator 1s ease-in-out infinite;
+      transform: translateY(0);
+    }
+
+    .type-indicator span:nth-child(2) {
+      animation-delay: 150ms;
+    }
+
+    .type-indicator span:nth-child(3) {
+      animation-delay: 300ms;
+    }
+
+    @keyframes type-indicator {
+      0% {
+        transform: none;
+        animation-timing-function: cubic-bezier(0, 0, 0.2, 1);
+      }
+      50% {
+        transform: translateY(-25%);
+        animation-timing-function: cubic-bezier(0.8, 0, 1, 1);
+      }
+    }
+
+    .blink {
+      animation: blink 1.25s infinite;
+    }
+
+    @keyframes blink {
+      0% {
+        opacity: 1;
+      }
+      69% {
+        opacity: 1;
+      }
+      70% {
+        opacity: 0;
+      }
+      100% {
+        opacity: 0;
+      }
+    }
+    .messages-container {
+      height: 300vh; /* Adjust the height according to your needs */
+      overflow-y: auto;
+    }
+
+    .fa-upload,
+    .fa-microphone {
+      padding: 15px;
+      font-size: 20px;
+      background: #f8f9fa; /* Light Gray */
+      color: #000000; /* Black */
+      border-radius: 50%;
+    }
+
+    .fa-upload:hover,
+    .fa-microphone:hover {
+      background: #e9ecef; /* Slightly darker gray when hovered */
+    }
+  </style>
+</head>
+<body>
+  <div id="app" class="">
+    <div class="w-screen h-screen bg-gray-50 flex flex-col">
+      <div class="bg-gray-800 flex justify-center p-4">
+        <span class="text-white font-bold">BuildFast Labs</span>
+      </div>
+      <div class="grow flex">
+        <div class="w-80 bg-gray-800 p-4">
+          <h2 class="text-lg font-bold mb-4 text-white justify-center flex">Chat History</h2>
+          <button class="bg-gray-800 border-white text-white px-4 py-2 rounded-md mb-4 border border-white rounded-xl w-full" @click="addNewChat">New Chat</button>
+          <div v-for="room in chatRooms" :key="room" class="mb-2 w-full">
+            <div class="text-white hover:cursor-pointer hover:bg-[#EEEEEE55] w-full p-1 rounded-xl">[[ room ]]</div>
+          </div>
+          <div class="bottom-0 absolute">
+            <div class="mb-4">
+              <label for="licenseKey" class="text-white">License Key:</label>
+              <input id="licenseKey" type="text" v-model="licenseKey" class="border rounded-md p-2 w-full border-gray-300" placeholder="Unlicensed">
+            </div>
+            <div class="mb-4">
+              <label for="openaiKey" class="text-white">OpenAI Key:</label>
+              <input id="openaiKey" type="text" v-model="openaiKey" class="border rounded-md p-2 w-full border-gray-300" placeholder="Enter API Key">
+            </div>
+            <button class="bg-gray-800 border-white text-white px-4 py-2 rounded-md mb-10 border border-white rounded-xl w-full" @click="saveKeys">Save Keys</button>
+          </div>
+        </div>
+        <div class="w-3/4">
+          <div
+            class="w-full max-w-screen-lg flex-1 m-auto pt-10 px-10"
+          >
+            <div class="flex flex-col">
+              <div
+                v-for="message in messages"
+                :key="message.id"
+                class="message rounded-lg py-2 px-6 mb-4"
+                :class="message.role === 'assistant' ? 'assistant bg-blue-100 border-blue-100 self-start' : 'user bg-green-200 border-green-200 self-end'"
+              >
+                <span v-if="message.type === 'text'">[[message.body ]]</span>
+                <img
+                  v-if="message.type === 'image'"
+                  :src="message.url"
+                  alt="Display Picture"
+                  class="w-1/2 h-1/2"
+                />
+                <audio
+                  v-if="message.type === 'audio'"
+                  :src="message.url"
+                  controls
+                ></audio>
+                <video
+                  v-if="message.type === 'video'"
+                  :src="message.url"
+                  controls
+                  class="w-full h-auto"
+                ></video>
+
+                <span
+                  v-if="message.beingTyped"
+                  class="w-2.5 bg-gray-600 h-4 inline-block -mb-0.5 align-baseline animate-blink"
+                ></span>
+              </div>
+              <div
+                v-if="showTyping"
+                class="message assistant rounded-lg py-2.5 px-6 mb-4 bg-blue-100 border-blue-100 self-start"
+              >
+                <div class="type-indicator">
+                  <span>.</span><span>.</span><span>.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="fixed inset-x-0 bottom-0 bg-gray-200">
+        <form
+          class="max-w-screen-lg m-auto w-full p-4 flex space-x-4 justify-center items-center"
+          @submit.prevent="sendMessage"
+        >
+          <input
+            id="message"
+            type="text"
+            autocomplete="off"
+            class="border rounded-md p-2 flex-1 border-gray-300"
+            v-model="newMessage"
+            placeholder="Your message..."
+          />
+          <button
+            class="bg-gray-800 text-white px-4 py-2 rounded-md"
+            :class="{'opacity-50' : waitingOnResponse}"
+          >
+            Send
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</body>
+
+<script>
+  const { createApp } = Vue;
+  var app = new Vue({
+    delimiters: ["[[", "]]"],
+    el: "#app",
+    data: {
+      licenseKey: "",
+      openaiKey: "",
+      newMessage: "",
+      showTyping: false,
+      waitingOnResponse: false,
+      messages: [],
+      mockTypingAfter: 1500,
+      mockResponseAfter: 3000,
+      mockOpeningMessage:
+        "Hello there. I am BuildFastGPT. Created by pwang_szn.",
+      mockResponsePrefix: "I am ready to serve",
+      chatRooms: [],
+    },
+    mounted() {
+      //this.mockResponse(this.mockOpeningMessage);
+    },
+    methods: {
+      addNewChat() {
+        this.chatRooms.push("Test Room" + (this.chatRooms.length + 1));
+        this.messages = [];
+        this.messages.push({ 
+          role: "assistant",
+          body: "Hi, How can I assist you?",
+          id: Date.now(),
+          type: "text",
+        });
+      },
+      saveKeys() {
+        console.log("License Key:", this.licenseKey);
+        console.log("OpenAI Key:", this.openaiKey);
+      },
+
+      sendMessage() {
+        if (this.waitingOnResponse) return;
+        this.showTyping = true;
+        this.messages.push({
+          role: "user",
+          body: this.newMessage,
+          id: Date.now(),
+          type: "text",
+        });
+        //this.messages.push({ role: "assistant", url: 'https://i.ytimg.com/vi/zocutif0cQY/maxresdefault.jpg', type: 'image', id: Date.now() })
+        //this.messages.push({ role: "assistant", url: 'https://dl.dropboxusercontent.com/scl/fi/mw10wjgrtnaqdwmvhm38b/Prompts-Concept.wav?dl=0&rlkey=jh3t4banv86o5pal7dgghl4mg', type: 'audio', id: Date.now() })
+        //this.messages.push({ role: "assistant",url: 'https://www.dropbox.com/scl/fi/umce1m5xq2ycrc7na7i27/How-To-Create-a-Personal-Chatbot.mp4?dl=1&rlkey=082i3ggai33fctlm8txnhhef8', type: 'video', id: Date.now() })
+        this.waitingOnResponse = true;
+        axios({
+          method: "post",
+          url: "/api/generate_img",
+          data: {
+            res: this.newMessage,
+          },
+          headers: {
+            "X-CSRFToken": "{{ csrf_token }}",
+          },
+        })
+          .then((response) => {
+            console.log(response.data["img_url"]);
+            image_url = response.data["img_url"];
+            this.typeOutResponse(image_url, "image");
+            this.showTyping = false;
+            this.waitingOnResponse = false;
+
+          })
+          .catch((error) => {
+            console.error("Error:", error);
+                        this.showTyping = false;
+            this.waitingOnResponse = false;
+            this.typeOutResponse("SORRY THERE WAS AN ERROR", "text");
+          });
+
+        this.newMessage = "";
+        window.scrollTo(0, document.body.scrollHeight);
+      },
+      typeOutResponse(message, type = "text") {
+        if (type === "image") {
+          this.messages.push({
+            role: "assistant",
+            url: message,
+            type: type,
+            id: Date.now(),
+          });
+          this.waitingOnResponse = false;
+        } else {
+          let responseMessage = {
+            role: "assistant",
+            body: "",
+            beingTyped: true,
+            id: Date.now(),
+            type: type,
+          };
+          this.messages.push(responseMessage);
+          let i = 0;
+          let interval = setInterval(() => {
+            responseMessage.body += message.charAt(i);
+            i++;
+            if (i > message.length - 1) {
+              this.waitingOnResponse = false;
+              responseMessage.beingTyped = false;
+              clearInterval(interval);
+            }
+          }, 30);
+        }
+      },
+    },
+  });
+</script>
+
+<script>
+  let element = document.querySelector("#personaltwitter");
+  if (element) {
+    element.classList.remove("bottom-0");
+    element.classList.add("top-0");
+  }
+</script>
+
+{% endblock %}
